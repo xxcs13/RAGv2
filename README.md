@@ -94,8 +94,8 @@ sequenceDiagram
 
 2. **Create and activate conda environment**:
    ```bash
-   conda create -n ragv1 python=3.10
-   conda activate ragv1
+   conda create -n ragv2 python=3.10
+   conda activate ragv2
    ```
 
 3. **Install dependencies**:
