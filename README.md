@@ -117,7 +117,7 @@ All system configuration is managed in `config.py`. Key settings include:
 
 ### Model Configuration
 ```python
-DEFAULT_LLM_MODEL = "gpt-4.1-mini"           # Main generation model
+DEFAULT_LLM_MODEL = "gpt-4.1-mini"                  # Main generation model
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"  # Vector embeddings
 ```
 
@@ -146,7 +146,7 @@ DEFAULT_VECTORSTORE_DIR = "chromadb_test"   # ChromaDB storage directory
 
 ```bash
 # Activate the environment
-conda activate ragv1
+conda activate ragv2
 
 # Interactive mode - ask questions interactively
 python main.py
@@ -179,7 +179,7 @@ The system automatically processes documents based on their file extensions:
 
 ### Query Processing and Output
 
-The system provides structured responses in Traditional Chinese with:
+The system provides structured responses in Traditional Chinese:
 
 1. **Step-by-step analysis**: Detailed reasoning process
 2. **Reasoning summary**: Concise evidence synthesis  
@@ -199,8 +199,8 @@ Answer: 2023年第一季（1Q23）毛利為314,505百萬元新台幣（314,505,0
 ## File Structure
 
 ```
-ragv1/
-├── main.py                 # Main entry point and CLI interface
+ragv2/
+├── main.py                # Main entry point and CLI interface
 ├── config.py              # System configuration and settings
 ├── parsing.py             # Document parsing (PDF/PPTX/Excel)
 ├── chunking.py            # Content chunking with cross-page support  
@@ -237,19 +237,19 @@ ragv1/
 
 3. **Excel Spreadsheets**:
    - Sheet-level chunking using pandas
-   - Complete sheet content as single semantic unit
+   - Complete sheet content as a single semantic unit
    - Preserves sheet names for citation format "filename Sheet: SheetName"
    - Supports both .xlsx (openpyxl) and .xls (xlrd) formats
 
 ### Vector Storage and Retrieval
 
-- **Embedding Model**: OpenAI text-embedding-3-small (1536 dimensions)
+- **Embedding Model**: OpenAI text-embedding-3-small 
 - **Vector Database**: ChromaDB with SQLite backend for local persistence
 - **Content Strategy**: Only document content is embedded, metadata stored separately
 - **Retrieval Pipeline**: 
   1. Vector similarity search (top-30 candidates)
   2. Parent page aggregation for context recovery
-  3. LLM reranking using GPT-4 Turbo Mini (top-10 final results)
+  3. LLM reranking using GPT-4.1 Mini (top-10 final results)
   4. Context assembly with source tracking
 
 ### Answer Generation
@@ -302,13 +302,13 @@ The system automatically logs:
 1. **Missing API Key**:
    ```
    Error: Please set OPENAI_API_KEY in your .env file
-   Solution: Create .env file with valid OpenAI API key
+   Solution: Create a .env file with a valid OpenAI API key
    ```
 
 2. **Import Errors**:
    ```
    Error: Module not found
-   Solution: Ensure conda environment is activated and run pip install -r requirements.txt
+   Solution: Ensure the conda environment is activated and run pip install -r requirements.txt
    ```
 
 3. **Database Errors**:
@@ -335,16 +335,6 @@ For telemetry and detailed ChromaDB logs:
 ```env
 ENABLE_TELEMETRY=true
 ```
-
-## System Requirements
-
-### Dependencies
-- **LangChain**: 0.3.27+ (core RAG framework)
-- **LangGraph**: 0.6.4+ (workflow orchestration)  
-- **OpenAI**: 1.99.6+ (LLM and embeddings)
-- **ChromaDB**: 1.0.16+ (vector database)
-- **Document Processing**: pypdf, pdfplumber, python-pptx, pandas, openpyxl
-- **Python**: 3.10+ (required for all dependencies)
 
 ### Hardware Recommendations
 - **Memory**: 8GB+ RAM for large document collections
