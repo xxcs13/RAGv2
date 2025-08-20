@@ -136,17 +136,24 @@ class RetrievalRankingPrompts:
     """Prompts for document reranking."""
     
     system_prompt_multiple = """
-You are a RAG retrieval ranker.
+You are an expert document relevance evaluator. Your task is to analyze text blocks and determine their relevance to a specific query.
 
-You will receive a query and several retrieved text blocks. Your task is to evaluate and score each block based on its relevance to the query.
+For each text block provided, you must:
+1. Analyze how well the content directly addresses the query
+2. Consider factual accuracy and completeness of information
+3. Evaluate the specificity and detail level
+4. Assess the recency and context relevance
 
-Instructions:
-1. Analyze each text block carefully
-2. Consider semantic relevance, factual accuracy, and directness of information
-3. Score each block from 0.0 to 1.0 (1.0 = highly relevant, 0.0 = not relevant)
-4. Provide reasoning for each score
+Scoring Guidelines:
+- 1.0: Highly relevant, directly answers the query with comprehensive information
+- 0.8-0.9: Very relevant, contains substantial useful information 
+- 0.6-0.7: Moderately relevant, provides some useful context or partial answers
+- 0.4-0.5: Slightly relevant, mentions related topics but limited direct value
+- 0.0-0.3: Not relevant, off-topic or provides no useful information
 
-For each block, provide:
-- reasoning: Detailed explanation of relevance assessment
-- relevance_score: Float between 0.0 and 1.0
+Important Instructions:
+   - Always provide relevance scores between 0.0 and 1.0
+   - Base scores only on content that directly relates to the query
+   - Be clear and concise in justifications
+   - Do not infer information beyond what's explicitly stated
 """

@@ -11,6 +11,7 @@ from langchain.schema.messages import BaseMessage
 from concurrent.futures import ThreadPoolExecutor
 from chunking import ParentPageAggregator
 from models import RetrievalRankingSingleBlock, RetrievalRankingMultipleBlocks
+from prompts import RetrievalRankingPrompts
 from config import DEFAULT_LLM_MODEL
 
 
@@ -19,28 +20,7 @@ class LLMReranker:
     
     def __init__(self, model_name: str = DEFAULT_LLM_MODEL):
         self.llm = ChatOpenAI(model=model_name, temperature=0.0)
-        self.system_prompt_multiple = """
-You are an expert document relevance evaluator. Your task is to analyze text blocks and determine their relevance to a specific query.
-
-For each text block provided, you must:
-1. Analyze how well the content directly addresses the query
-2. Consider factual accuracy and completeness of information
-3. Evaluate the specificity and detail level
-4. Assess the recency and context relevance
-
-Scoring Guidelines:
-- 1.0: Highly relevant, directly answers the query with comprehensive information
-- 0.8-0.9: Very relevant, contains substantial useful information 
-- 0.6-0.7: Moderately relevant, provides some useful context or partial answers
-- 0.4-0.5: Slightly relevant, mentions related topics but limited direct value
-- 0.0-0.3: Not relevant, off-topic or provides no useful information
-
-Important Instructions:
-   - Always provide relevance scores between 0.0 and 1.0
-   - Base scores only on content that directly relates to the query
-   - Be clear and concise in justifications
-   - Do not infer information beyond what's explicitly stated
-"""
+        self.ranking_prompts = RetrievalRankingPrompts()
     
     def rerank_documents(self, query: str, documents: List[Dict], 
                         documents_batch_size: int = 3, llm_weight: float = 0.7) -> List[Dict]:
@@ -110,7 +90,7 @@ Text Blocks:
 }
 """
         
-        full_prompt = f"{self.system_prompt_multiple}\n\nYour response must be a valid JSON object matching this schema:\n{schema_str}\n\nProvide one ranking object for each of the {len(texts)} blocks in order.\n\n{user_prompt}"
+        full_prompt = f"{self.ranking_prompts.system_prompt_multiple}\n\nYour response must be a valid JSON object matching this schema:\n{schema_str}\n\nProvide one ranking object for each of the {len(texts)} blocks in order.\n\n{user_prompt}"
         
         try:
             response = self.llm.invoke(full_prompt)
