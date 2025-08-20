@@ -61,8 +61,8 @@ class AnswerGenerator:
     
     def _generate_fallback_answer(self, question: str, context: str) -> str:
         """Generate simple fallback answer when structured generation fails."""
-        simple_prompt = f"Answer this question based on the context:\n\nContext: {context}\n\nQuestion: {question}"
-        response = self.llm.invoke(simple_prompt)
+        fallback_prompt = f"{self.prompt.instruction}\n\nContext: {context}\n\nQuestion: {question}"
+        response = self.llm.invoke(fallback_prompt)
         return response.content if isinstance(response, BaseMessage) else str(response)
     
     def _create_fallback_structure(self, answer: str) -> Dict[str, Any]:
