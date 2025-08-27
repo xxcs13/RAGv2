@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from chunking import ParentPageAggregator
 from models import RetrievalRankingSingleBlock, RetrievalRankingMultipleBlocks
 from prompts import RetrievalRankingPrompts
-from config import DEFAULT_LLM_MODEL, DEFAULT_LLM_WEIGHT, DEFAULT_TOP_K, DEFAULT_TOP_N
+from config import DEFAULT_LLM_MODEL, DEFAULT_LLM_WEIGHT, DEFAULT_TOP_K, DEFAULT_TOP_N, PARENT_PAGE_AGGREGATOR
 
 
 class LLMReranker:
@@ -189,11 +189,26 @@ class VectorRetriever:
 
 
 class HybridRetriever:
-    """Complete retrieval system following the five-stage pipeline."""
+    """Complete retrieval system with configurable parent page aggregation."""
     
-    def __init__(self, vectorstore, parsed_reports: List[Dict]):
+    def __init__(self, vectorstore, parsed_reports: List[Dict], use_parent_aggregator: bool = PARENT_PAGE_AGGREGATOR):
+        """
+        Initialize HybridRetriever with optional parent page aggregation.
+        
+        Args:
+            vectorstore: Vector database for similarity search
+            parsed_reports: List of parsed document metadata
+            use_parent_aggregator: Whether to use parent page aggregation (default from config)
+        """
         self.vector_retriever = VectorRetriever(vectorstore)
-        self.parent_aggregator = ParentPageAggregator(parsed_reports)
+        self.use_parent_aggregator = use_parent_aggregator
+        
+        # Only initialize ParentPageAggregator if needed
+        if self.use_parent_aggregator:
+            self.parent_aggregator = ParentPageAggregator(parsed_reports)
+        else:
+            self.parent_aggregator = None
+            
         self.reranker = LLMReranker()
         
     def retrieve(
@@ -204,21 +219,37 @@ class HybridRetriever:
         top_n: int = DEFAULT_TOP_N,
         llm_weight: float = DEFAULT_LLM_WEIGHT
     ) -> List[Dict]:
-        """Complete retrieval pipeline with vector search, parent aggregation and LLM reranking."""
+        """
+        Complete retrieval pipeline with vector search, optional parent aggregation and LLM reranking.
+        Pipeline stages:
+        1. Vector similarity search to get initial chunks
+        2. Optional parent page aggregation (if enabled)
+        3. LLM reranking for relevance scoring
+        4. Return top_n results
+        """
+        # Stage 1: Vector retrieval
         chunk_results = self.vector_retriever.retrieve(
             query=query,
             top_k=llm_reranking_sample_size
         )
         
-        parent_results = self.parent_aggregator.aggregate_to_parent_pages(chunk_results)
+        # Stage 2: Optional parent page aggregation
+        if self.use_parent_aggregator and self.parent_aggregator:
+            # Aggregate chunks to parent pages for better context
+            aggregated_results = self.parent_aggregator.aggregate_to_parent_pages(chunk_results)
+        else:
+            # Use chunk results directly without aggregation
+            aggregated_results = chunk_results
         
+        # Stage 3: LLM reranking
         reranked_results = self.reranker.rerank_documents(
             query=query,
-            documents=parent_results,
+            documents=aggregated_results,
             documents_batch_size=documents_batch_size,
             llm_weight=llm_weight
         )
         
+        # Stage 4: Return top results
         return reranked_results[:top_n]
 
 
