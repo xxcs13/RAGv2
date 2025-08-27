@@ -15,7 +15,7 @@ from vectorstore import VectorStoreManager
 from retrieval import HybridRetriever, assemble_context
 from generation import AnswerGenerator
 from utils import calculate_throughput
-from config import DEFAULT_LLM_WEIGHT, DEFAULT_TOP_K, DEFAULT_TOP_N, DEFAULT_BATCH_SIZE
+from config import DEFAULT_LLM_WEIGHT, DEFAULT_TOP_K, DEFAULT_TOP_N, DEFAULT_BATCH_SIZE, PARENT_PAGE_AGGREGATOR
 
 @dataclass
 class GraphState:
@@ -162,7 +162,12 @@ def retrieval_node(state: GraphState) -> GraphState:
     
     retrieval_start = time.time()
     
-    retriever = HybridRetriever(state.vectorstore, state.parsed_reports)
+    # Use the configuration setting for parent page aggregation
+    retriever = HybridRetriever(
+        vectorstore=state.vectorstore, 
+        parsed_reports=state.parsed_reports,
+        use_parent_aggregator=PARENT_PAGE_AGGREGATOR
+    )
     
     reranked_results = retriever.retrieve(
         query=state.question,
