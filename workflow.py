@@ -15,7 +15,7 @@ from vectorstore import VectorStoreManager
 from retrieval import HybridRetriever, assemble_context
 from generation import AnswerGenerator
 from utils import calculate_throughput
-
+from config import DEFAULT_LLM_WEIGHT, DEFAULT_TOP_K, DEFAULT_TOP_N, DEFAULT_BATCH_SIZE
 
 @dataclass
 class GraphState:
@@ -166,10 +166,10 @@ def retrieval_node(state: GraphState) -> GraphState:
     
     reranked_results = retriever.retrieve(
         query=state.question,
-        llm_reranking_sample_size=30,
-        documents_batch_size=2,
-        top_n=10,
-        llm_weight=0.7
+        llm_reranking_sample_size=DEFAULT_TOP_K,
+        documents_batch_size=DEFAULT_BATCH_SIZE,
+        top_n=DEFAULT_TOP_N,
+        llm_weight=DEFAULT_LLM_WEIGHT
     )
     
     retrieval_time = time.time() - retrieval_start
