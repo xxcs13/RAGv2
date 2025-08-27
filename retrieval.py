@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from chunking import ParentPageAggregator
 from models import RetrievalRankingSingleBlock, RetrievalRankingMultipleBlocks
 from prompts import RetrievalRankingPrompts
-from config import DEFAULT_LLM_MODEL
+from config import DEFAULT_LLM_MODEL, DEFAULT_LLM_WEIGHT, DEFAULT_TOP_K, DEFAULT_TOP_N
 
 
 class LLMReranker:
@@ -23,7 +23,7 @@ class LLMReranker:
         self.ranking_prompts = RetrievalRankingPrompts()
     
     def rerank_documents(self, query: str, documents: List[Dict], 
-                        documents_batch_size: int = 3, llm_weight: float = 0.7) -> List[Dict]:
+                        documents_batch_size: int = 3, llm_weight: float = DEFAULT_LLM_WEIGHT) -> List[Dict]:
         """Rerank pages using LLM with relevance score adjustment."""
         if not documents:
             return []
@@ -164,7 +164,7 @@ class VectorRetriever:
     def __init__(self, vectorstore):
         self.vectorstore = vectorstore
     
-    def retrieve(self, query: str, top_k: int = 30) -> List[Dict]:
+    def retrieve(self, query: str, top_k: int = DEFAULT_TOP_K) -> List[Dict]:
         """Retrieve chunks using vector similarity search."""
         if not self.vectorstore:
             return []
@@ -199,10 +199,10 @@ class HybridRetriever:
     def retrieve(
         self, 
         query: str, 
-        llm_reranking_sample_size: int = 30,
+        llm_reranking_sample_size: int = DEFAULT_TOP_K,
         documents_batch_size: int = 2,
-        top_n: int = 10,
-        llm_weight: float = 0.7
+        top_n: int = DEFAULT_TOP_N,
+        llm_weight: float = DEFAULT_LLM_WEIGHT
     ) -> List[Dict]:
         """Complete retrieval pipeline with vector search, parent aggregation and LLM reranking."""
         chunk_results = self.vector_retriever.retrieve(
