@@ -35,7 +35,7 @@ if not enable_telemetry:
     os.environ.setdefault("CHROMA_TELEMETRY", "false")
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
     os.environ.setdefault("ANONYMIZED_TELEMETRY", "false")
-    print("Telemetry disabled for privacy and stability. Set ENABLE_TELEMETRY=true in .env to enable.")
+    # print("Telemetry disabled for privacy and stability. Set ENABLE_TELEMETRY=true in .env to enable.")
 
 # Logging Configuration
 _log = logging.getLogger(__name__)
