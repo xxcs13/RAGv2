@@ -31,7 +31,7 @@ DEFAULT_BATCH_SIZE = 2
 
 
 # Set to True to enable parent page aggregation, False to use chunk-level retrieval
-PARENT_PAGE_AGGREGATOR = True
+PARENT_PAGE_AGGREGATOR = False
 
 # Telemetry Configuration
 enable_telemetry = os.getenv("ENABLE_TELEMETRY", "false").lower() == "true"
