@@ -330,49 +330,305 @@ class CrossPageTextSplitter:
 
 
 class ParentPageAggregator:
-    """Enhanced parent page retrieval with support for cross-page chunks."""
+    """Enhanced parent page retrieval with support for cross-page chunks.
+    
+    Only applies aggregation to PDF documents as Excel and PPTX already
+    have one page per chunk and do not need aggregation.
+    """
     
     def __init__(self, parsed_reports: List[Dict]):
         """Initialize with parsed document reports."""
         self.parsed_reports = parsed_reports
         self.page_content_map = self._build_page_content_map()
     
-    def _build_page_content_map(self) -> Dict[int, str]:
-        """Build mapping from page numbers to full page content."""
-        page_map = {}
+    def _build_page_content_map(self) -> Dict[str, Dict[int, str]]:
+        """Build mapping from (source_file, page_num) to full page content.
+        
+        Returns:
+            Dict with structure: {source_file: {page_num: page_content}}
+        """
+        content_map = {}
         for report in self.parsed_reports:
+            # Use filename from metainfo as the key
+            filename = report['report']['metainfo']['filename']
+            content_map[filename] = {}
+            
             for page_data in report['report']['content']['pages']:
                 page_num = page_data['page']
-                page_map[page_num] = page_data['text']
-        return page_map
+                page_content = page_data.get('text', '')
+                content_map[filename][page_num] = page_content
+                
+        return content_map
     
     def aggregate_to_parent_pages(self, chunk_results: List[Dict]) -> List[Dict]:
-        """Extract parent pages from chunks with cross-page support."""
-        seen_page_combinations = set()
+        """Extract parent pages from chunks with intelligent content matching.
+        
+        Only applies aggregation to PDF chunks. Excel and PPTX chunks are
+        returned as-is since they already represent complete pages.
+        
+        For PDF chunks, this method finds the actual page that contains the chunk content
+        by performing content matching, ensuring accurate page attribution in source references.
+        """
+        processed_chunks = set()
         parent_results = []
         
         for chunk_result in chunk_results:
-            page_coverage = self._get_chunk_page_coverage(chunk_result)
-            page_combination_key = tuple(sorted(page_coverage))
+            document_type = chunk_result.get('document_type', 'unknown')
             
-            if page_combination_key not in seen_page_combinations:
-                seen_page_combinations.add(page_combination_key)
-                combined_content = self._get_combined_page_content(page_coverage)
+            # Only apply aggregation to PDF documents
+            if document_type != 'pdf':
+                # For non-PDF documents, return chunk as-is
+                parent_results.append(chunk_result)
+                continue
+            
+            # Create a unique identifier for this chunk to avoid duplicates
+            chunk_id = (
+                chunk_result.get('source_file', ''),
+                chunk_result.get('page', 0),
+                chunk_result.get('chunk', 0)
+            )
+            
+            if chunk_id in processed_chunks:
+                continue
+            
+            processed_chunks.add(chunk_id)
+            
+            # For PDF chunks, find the correct page containing the content
+            source_file_ref = chunk_result.get('source_file', '')
+            filename = self._extract_filename_from_source(source_file_ref)
+            chunk_text = chunk_result.get('text', '')
+            original_page = chunk_result.get('page', 0)
+            
+            # Find the best matching page for this chunk content
+            best_page, full_page_content = self._find_best_matching_page(filename, chunk_text, original_page)
+            
+            if full_page_content and full_page_content.strip():
+                # Update source reference with correct page number
+                correct_source_ref = self._update_source_reference(source_file_ref, best_page)
                 
                 parent_result = {
-                    'text': combined_content,
-                    'page': page_coverage[0],
-                    'page_range': ",".join(map(str, page_coverage)) if len(page_coverage) > 1 else None,
-                    'spans_pages': len(page_coverage) > 1,
+                    'text': full_page_content,
+                    'page': best_page,  # Use the actual page where content was found
+                    'page_range': None,  # Single page
+                    'spans_pages': False,
                     'distance': chunk_result['distance'],
-                    'source_file': chunk_result['source_file'],
-                    'source_reference': chunk_result.get('source_reference', chunk_result['source_file']),  # Use original source reference
+                    'source_file': correct_source_ref,
+                    'source_reference': correct_source_ref,
                     'document_type': chunk_result['document_type'],
                     'metadata': chunk_result['metadata']
                 }
                 parent_results.append(parent_result)
+            else:
+                # Fallback to original chunk if no matching page found
+                parent_results.append(chunk_result)
         
         return parent_results
+    
+    def _extract_filename_from_source(self, source_file_ref: str) -> str:
+        """Extract filename from source_file reference.
+        
+        Args:
+            source_file_ref: Source reference like "file.pdf (Page 5)" or "file.pptx (Slide 3)"
+            
+        Returns:
+            Just the filename part, e.g., "file.pdf"
+        """
+        if not source_file_ref:
+            return ''
+        
+        # Remove page/slide information in parentheses
+        import re
+        # Match patterns like " (Page X)", " (Slide X)", " Sheet: X"
+        cleaned = re.sub(r' \((Page|Slide) \d+\)$', '', source_file_ref)
+        cleaned = re.sub(r' Sheet: .+$', '', cleaned)
+        
+        return cleaned.strip()
+    
+    def _find_best_matching_page(self, filename: str, chunk_text: str, original_page: int) -> Tuple[int, str]:
+        """Find the page that best matches the chunk content using intelligent content matching.
+        
+        Args:
+            filename: The filename to search within
+            chunk_text: The text content of the chunk to match
+            original_page: The originally attributed page number
+            
+        Returns:
+            Tuple of (best_page_number, full_page_content)
+        """
+        if filename not in self.page_content_map:
+            return original_page, ''
+        
+        file_pages = self.page_content_map[filename]
+        
+        # Clean the chunk text for better matching
+        clean_chunk = self._clean_text_for_matching(chunk_text)
+        
+        if not clean_chunk.strip():
+            # If chunk text is empty, fall back to original page
+            return original_page, file_pages.get(original_page, '')
+        
+        # Strategy 1: Exact substring match - highest confidence
+        for page_num, page_content in file_pages.items():
+            clean_page = self._clean_text_for_matching(page_content)
+            if clean_chunk in clean_page and len(clean_chunk) > 50:  # Minimum meaningful length
+                return page_num, page_content
+        
+        # Strategy 2: Significant overlap match - medium confidence
+        best_match_page = original_page
+        best_match_content = file_pages.get(original_page, '')
+        best_overlap_ratio = 0.0
+        
+        for page_num, page_content in file_pages.items():
+            overlap_ratio = self._calculate_content_overlap(clean_chunk, self._clean_text_for_matching(page_content))
+            if overlap_ratio > best_overlap_ratio and overlap_ratio > 0.3:  # At least 30% overlap
+                best_overlap_ratio = overlap_ratio
+                best_match_page = page_num
+                best_match_content = page_content
+        
+        # Strategy 3: Key phrase matching for critical content
+        if best_overlap_ratio < 0.3:
+            key_phrases = self._extract_key_phrases(clean_chunk)
+            if key_phrases:
+                for page_num, page_content in file_pages.items():
+                    clean_page = self._clean_text_for_matching(page_content)
+                    matched_phrases = sum(1 for phrase in key_phrases if phrase in clean_page)
+                    match_ratio = matched_phrases / len(key_phrases)
+                    
+                    if match_ratio > 0.5:  # At least 50% of key phrases match
+                        return page_num, page_content
+        
+        return best_match_page, best_match_content
+    
+    def _clean_text_for_matching(self, text: str) -> str:
+        """Clean text for better content matching by normalizing whitespace and removing noise.
+        
+        Args:
+            text: Raw text to clean
+            
+        Returns:
+            Cleaned text suitable for content matching
+        """
+        if not text:
+            return ''
+        
+        import re
+        
+        # Normalize whitespace and remove excessive spacing
+        cleaned = re.sub(r'\s+', ' ', text.strip())
+        
+        # Remove common formatting artifacts that might interfere with matching
+        cleaned = re.sub(r'[\u00a0\u2000-\u200f\u2028-\u202f\ufeff]', ' ', cleaned)  # Unicode spaces
+        cleaned = re.sub(r'[^\w\s\u4e00-\u9fff\u3400-\u4dbf]', ' ', cleaned)  # Keep words, spaces, and Chinese characters
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        
+        return cleaned
+    
+    def _calculate_content_overlap(self, text1: str, text2: str) -> float:
+        """Calculate content overlap ratio between two texts using word-level comparison.
+        
+        Args:
+            text1: First text (usually chunk content)
+            text2: Second text (usually page content)
+            
+        Returns:
+            Overlap ratio from 0.0 to 1.0
+        """
+        if not text1 or not text2:
+            return 0.0
+        
+        # Split into words and create sets for comparison
+        words1 = set(text1.lower().split())
+        words2 = set(text2.lower().split())
+        
+        if not words1:
+            return 0.0
+        
+        # Calculate overlap ratio based on words in text1 that appear in text2
+        common_words = words1.intersection(words2)
+        overlap_ratio = len(common_words) / len(words1)
+        
+        return overlap_ratio
+    
+    def _extract_key_phrases(self, text: str) -> List[str]:
+        """Extract key phrases from text for content matching.
+        
+        Args:
+            text: Text to extract key phrases from
+            
+        Returns:
+            List of key phrases that can be used for matching
+        """
+        if not text or len(text) < 20:
+            return []
+        
+        import re
+        
+        key_phrases = []
+        
+        # Extract phrases with specific patterns that are likely to be unique
+        # Pattern 1: Sequences of 3+ consecutive words containing Chinese characters or important terms
+        chinese_phrases = re.findall(r'[\u4e00-\u9fff]+[^.!?]*?[\u4e00-\u9fff]+', text)
+        for phrase in chinese_phrases:
+            if len(phrase.strip()) > 10:  # Meaningful length
+                key_phrases.append(phrase.strip()[:50])  # Limit length
+        
+        # Pattern 2: Number sequences (important for regulations, financial data, etc.)
+        number_phrases = re.findall(r'\d+[^\w]*[^\d\s]+[^\w]*\d+', text)
+        key_phrases.extend(number_phrases)
+        
+        # Pattern 3: Capitalized sequences (might be important terms, names, etc.)
+        caps_phrases = re.findall(r'[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+', text)
+        key_phrases.extend(caps_phrases)
+        
+        # Remove duplicates and filter by length
+        unique_phrases = list(set(phrase for phrase in key_phrases if len(phrase.strip()) > 5))
+        
+        # Return top 10 most distinctive phrases
+        return unique_phrases[:10]
+    
+    def _update_source_reference(self, original_source_ref: str, correct_page: int) -> str:
+        """Update source reference with correct page number.
+        
+        Args:
+            original_source_ref: Original source reference like "file.pdf (Page 5)"
+            correct_page: Correct page number to use
+            
+        Returns:
+            Updated source reference with correct page number
+        """
+        if not original_source_ref:
+            return f"Unknown Document (Page {correct_page})"
+        
+        import re
+        
+        # Extract the base filename
+        filename = self._extract_filename_from_source(original_source_ref)
+        
+        # Determine document type and create appropriate reference
+        if filename.endswith('.pdf'):
+            return f"{filename} (Page {correct_page})"
+        elif filename.endswith('.pptx'):
+            return f"{filename} (Slide {correct_page})"
+        elif filename.endswith('.xls') or filename.endswith('.xlsx'):
+            return f"{filename} (Page {correct_page})"
+        else:
+            return f"{filename} (Page {correct_page})"
+    
+    def _get_full_page_content(self, filename: str, page_number: int) -> str:
+        """Get full content for a specific page from a specific document.
+        
+        Args:
+            filename: The filename to look up
+            page_number: The page number to retrieve
+            
+        Returns:
+            Full page content or empty string if not found
+        """
+        if filename not in self.page_content_map:
+            return ''
+        
+        file_pages = self.page_content_map[filename]
+        return file_pages.get(page_number, '')
     
     def _get_chunk_page_coverage(self, chunk_result: Dict) -> List[int]:
         """Determine which pages a chunk covers."""
@@ -384,14 +640,27 @@ class ParentPageAggregator:
         else:
             return [chunk_result['page']]
     
-    def _get_combined_page_content(self, page_numbers: List[int]) -> str:
-        """Combine content from multiple pages."""
+    def _get_combined_page_content(self, source_file: str, page_numbers: List[int]) -> str:
+        """Combine content from multiple pages of a specific document.
+        
+        Args:
+            source_file: The source file identifier
+            page_numbers: List of page numbers to combine
+            
+        Returns:
+            Combined page content or empty string if not found
+        """
+        if source_file not in self.page_content_map:
+            return ''
+        
+        file_pages = self.page_content_map[source_file]
+        
         if len(page_numbers) == 1:
-            return self.page_content_map.get(page_numbers[0], '')
+            return file_pages.get(page_numbers[0], '')
         
         combined_parts = []
         for page_num in sorted(page_numbers):
-            page_content = self.page_content_map.get(page_num, '')
+            page_content = file_pages.get(page_num, '')
             if page_content.strip():
                 combined_parts.append(f"[Page {page_num}]\n{page_content}")
         
